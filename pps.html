@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Passport Photo Creator — Offline</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Cropper.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- jsPDF for PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        body, div, nav, header, aside { transition: background-color 0.3s, border-color 0.3s, color 0.3s; }
+
+        /* PREVIEW CONTAINER */
+        .preview-wrapper {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 40px;
+            background-color: #f1f5f900;
+        }
+        .dark .preview-wrapper {
+            background-color: #020617;
+        }
+
+        .paper-preview {
+            transition: aspect-ratio 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+        
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { opacity: 1; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+        /* Color Picker Reset */
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 h-screen flex flex-col overflow-hidden">
+
+    <!-- TOP NAV -->
+    <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-3 shrink-0 z-20 flex justify-between items-center shadow-sm">
+        <div class="flex items-center gap-6">
+            <div class="flex items-center gap-2">
+                <div class="bg-blue-600 text-white p-1.5 rounded-lg">
+                    <i data-lucide="camera" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight text-slate-900 dark:text-white">Passport<span class="text-blue-600 dark:text-blue-400">Studio</span></h1>
+                    <p class="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">Secure Offline Editor</p>
+                </div>
+            </div>
+            
+            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+            
+            <button onclick="document.getElementById('mainUpload').click()" class="hidden sm:flex bg-blue-50 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-slate-600 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-slate-600 px-4 py-2 rounded-lg text-sm font-semibold transition items-center gap-2">
+                <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                Upload Photo
+            </button>
+            <input type="file" id="mainUpload" class="hidden" accept="image/*" onchange="handleUpload(event)">
+        </div>
+
+        <div class="flex items-center gap-4">
+            <!-- Global Photo Size & Scale -->
+            <div class="hidden md:flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                <div class="flex flex-col px-2">
+                    <label class="text-[9px] uppercase font-bold text-slate-400">Width</label>
+                    <div class="flex items-center gap-1">
+                        <input type="number" id="globalW" value="35" class="w-12 bg-transparent text-sm font-bold outline-none p-0 text-slate-700 dark:text-slate-200" onchange="updateBaseDimensions()">
+                        <span class="text-xs text-slate-400">mm</span>
+                    </div>
+                </div>
+                <div class="w-px h-6 bg-slate-200 dark:border-slate-700"></div>
+                <div class="flex flex-col px-2">
+                    <label class="text-[9px] uppercase font-bold text-slate-400">Height</label>
+                    <div class="flex items-center gap-1">
+                        <input type="number" id="globalH" value="45" class="w-12 bg-transparent text-sm font-bold outline-none p-0 text-slate-700 dark:text-slate-200" onchange="updateBaseDimensions()">
+                        <span class="text-xs text-slate-400">mm</span>
+                    </div>
+                </div>
+                <div class="w-px h-6 bg-slate-200 dark:border-slate-700"></div>
+                <!-- Global Scale Slider -->
+                <div class="flex flex-col px-2 min-w-[140px]">
+                    <label class="text-[9px] uppercase font-bold text-slate-400 mb-1">Scale</label>
+                    <div class="flex items-center gap-2">
+                         <input type="range" id="globalScale" min="0" max="100" value="100" step="10" autocomplete="off" class="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="applyGlobalScale(this.value)">
+                         <span id="globalScaleVal" class="text-sm font-bold text-blue-600 dark:text-blue-400 w-10 text-right">100%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Toggle -->
+            <button onclick="toggleTheme()" class="p-2.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors" title="Toggle Dark Mode">
+                <i data-lucide="moon" class="w-5 h-5 hidden dark:block"></i>
+                <i data-lucide="sun" class="w-5 h-5 block dark:hidden"></i>
+            </button>
+
+            <button onclick="people=[]; renderList(); renderSheet();" class="text-xs font-bold text-red-500 hover:text-red-600 px-2">Clear All</button>
+        </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- LEFT SIDEBAR: Controls & List -->
+        <aside class="w-full md:w-[420px] bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col z-10 shadow-xl">
+            
+            <!-- Photo List Area -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                <div class="flex justify-between items-end pb-2 border-b border-slate-100 dark:border-slate-700">
+                    <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Queue</h2>
+                    <div class="flex items-center gap-3">
+                         <button onclick="activateEcoMode()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded shadow-sm font-semibold transition-colors flex items-center gap-1.5" title="Untick all 'New Line' boxes to save space">
+                            <i data-lucide="leaf" class="w-3.5 h-3.5"></i> Eco Mode
+                        </button>
+                        <span id="capacityText" class="text-xs font-mono text-blue-600 dark:text-blue-400 font-bold">0 Photos</span>
+                    </div>
+                </div>
+
+                <div id="emptyState" class="flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                    <div class="w-12 h-12 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mb-3 text-slate-400">
+                        <i data-lucide="image-plus" class="w-6 h-6"></i>
+                    </div>
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-300">No photos yet</p>
+                    <button onclick="document.getElementById('mainUpload').click()" class="mt-2 text-xs text-blue-600 hover:underline">Upload an image</button>
+                </div>
+
+                <div id="peopleList" class="space-y-4"></div>
+            </div>
+
+            <!-- Bottom Configuration Panel -->
+            <div class="bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 p-5">
+                <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Sheet Settings</h3>
+                
+                <!-- Row 1: Paper & Orientation -->
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Paper Size</label>
+                        <div class="relative">
+                            <select id="paperSelect" class="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderSheet()">
+                                <option value="4r" selected>4R (4 x 6 inch)</option>
+                                <option value="a4">A4 (210 x 297 mm)</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Orientation</label>
+                        <div class="relative">
+                            <select id="orientationSelect" class="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none" onchange="renderSheet()">
+                                <option value="l" selected>Landscape</option>
+                                <option value="p">Portrait</option>
+                            </select>
+                            <i data-lucide="rotate-cw" class="absolute right-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 2: DPI, Margins, Gap, Stroke -->
+                <div class="grid grid-cols-4 gap-2 mb-4">
+                    <div class="col-span-1">
+                        <label class="block text-[10px] font-bold text-slate-400 mb-1">DPI</label>
+                        <select id="cfgDpi" class="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-xs rounded px-1 py-1.5" onchange="renderSheet()">
+                            <option value="300">300</option>
+                            <option value="600">600</option>
+                        </select>
+                    </div>
+                    <div class="col-span-1">
+                        <label class="block text-[10px] font-bold text-slate-400 mb-1">Margin</label>
+                        <input type="number" id="cfgMargin" value="3" min="0" class="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-xs rounded px-2 py-1.5" onchange="renderSheet()">
+                    </div>
+                    <div class="col-span-1">
+                        <label class="block text-[10px] font-bold text-slate-400 mb-1">Gap</label>
+                        <input type="number" id="cfgGap" value="2" min="0" class="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-xs rounded px-2 py-1.5" onchange="renderSheet()">
+                    </div>
+                     <div class="col-span-1 relative">
+                        <label class="block text-[10px] font-bold text-slate-400 mb-1" title="Stroke width">Stroke</label>
+                        <div class="flex items-center gap-2">
+                            <input type="number" id="cfgStroke" value="1" step="1" min="0" class="w-8 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-xs rounded px-1 py-1.5 text-center" onchange="renderSheet()">
+                            <div class="relative w-8 h-8 shrink-0 rounded-md overflow-hidden border border-slate-200 dark:border-slate-600 shadow-sm hover:ring-2 ring-blue-400 transition bg-white dark:bg-slate-700">
+                                <input type="color" id="cfgStrokeColor" value="#cbd5e1" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] cursor-pointer bg-transparent" onchange="renderSheet()">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex gap-2">
+                    <button onclick="downloadSheet('jpg')" class="flex-1 flex justify-center items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-lg shadow-sm transition-all active:scale-95">
+                        <i data-lucide="image" class="w-4 h-4"></i> JPG
+                    </button>
+                    <button onclick="downloadSheet('pdf')" class="flex-1 flex justify-center items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2.5 rounded-lg shadow-sm transition-all active:scale-95">
+                        <i data-lucide="file-text" class="w-4 h-4"></i> PDF
+                    </button>
+                    <button onclick="printSheet()" class="w-12 flex justify-center items-center bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-600 transition-all">
+                        <i data-lucide="printer" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- RIGHT PANEL: LIVE PREVIEW -->
+        <main class="flex-1 bg-slate-200/60 dark:bg-slate-950 relative overflow-hidden flex flex-col items-center justify-center p-6 md:p-10">
+            <!-- Grid Pattern Background -->
+            <div class="absolute inset-0 opacity-[0.05] dark:opacity-[0.03] pointer-events-none" style="background-image: linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px); background-size: 20px 20px;"></div>
+
+            <!-- 100% Preview Toggle Button -->
+            <button id="previewBtn" onclick="toggleFullPreview()" class="absolute top-6 right-6 z-50 bg-white dark:bg-slate-800 px-3 py-2 rounded-lg shadow-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-2" title="Toggle Actual Size">
+                <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                <span class="text-xs font-bold">100%</span>
+            </button>
+
+            <!-- Preview Container -->
+            <div class="preview-wrapper z-10">
+                <div id="previewContainer" class="paper-preview bg-white relative">
+                    <img id="sheetPreview" class="w-full h-full object-contain" src="" alt="Preview Loading...">
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0">
+                        <span class="text-slate-200 text-4xl font-black rotate-45">PREVIEW</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pb-6 mt-auto text-center z-10">
+                <span class="px-4 py-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur rounded-full text-xs font-medium text-slate-500 dark:text-slate-400 shadow-sm">
+                    Visual Preview (Low Res) • Download is High Quality
+                </span>
+            </div>
+        </main>
+    </div>
+
+    <!-- CROP MODAL -->
+    <div id="cropModal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-slate-900/90 backdrop-blur-sm transition-opacity"></div>
+        <div class="absolute inset-0 md:inset-6 lg:inset-12 bg-white dark:bg-slate-900 md:rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900 z-20">
+                <div>
+                    <h3 class="font-bold text-lg text-slate-900 dark:text-white">Adjust Photo</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Crop, rotate and align face</p>
+                </div>
+                <button onclick="closeModal()" class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 dark:text-slate-400 transition-colors">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 bg-slate-950 relative overflow-hidden flex items-center justify-center">
+                <img id="cropperImg" class="max-w-full max-h-full block" style="display: block; max-width: 100%;">
+            </div>
+
+            <div class="bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 p-4 z-20">
+                <div class="flex flex-col md:flex-row gap-4 justify-between items-center">
+                    
+                    <!-- Tools -->
+                    <div class="flex items-center gap-4 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+                        <div class="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg shrink-0">
+                            <button onclick="rotate(-90)" class="p-2 hover:bg-white dark:hover:bg-slate-700 rounded-md text-slate-600 dark:text-slate-300 shadow-sm"><i data-lucide="rotate-ccw" class="w-4 h-4"></i></button>
+                            <button onclick="rotate(90)" class="p-2 hover:bg-white dark:hover:bg-slate-700 rounded-md text-slate-600 dark:text-slate-300 shadow-sm"><i data-lucide="rotate-cw" class="w-4 h-4"></i></button>
+                        </div>
+
+                        <div class="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg shrink-0">
+                            <button onclick="flip('h')" class="p-2 hover:bg-white dark:hover:bg-slate-700 rounded-md text-slate-600 dark:text-slate-300 shadow-sm"><i data-lucide="flip-horizontal" class="w-4 h-4"></i></button>
+                            <button onclick="flip('v')" class="p-2 hover:bg-white dark:hover:bg-slate-700 rounded-md text-slate-600 dark:text-slate-300 shadow-sm"><i data-lucide="flip-vertical" class="w-4 h-4"></i></button>
+                        </div>
+                        
+                        <div class="flex items-center gap-3 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg h-[42px] shrink-0">
+                            <i data-lucide="gavel" class="w-4 h-4 text-slate-400"></i>
+                            <!-- ADDED ID HERE -->
+                            <input type="range" id="rotateSlider" min="-10" max="10" step="0.5" value="0" class="w-24 md:w-32 accent-blue-600" oninput="updateRotate(this.value)">
+                            <span id="rotateVal" class="text-xs font-mono w-10 text-right text-slate-600 dark:text-slate-300">0°</span>
+                        </div>
+                    </div>
+
+                    <button onclick="saveCrop()" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold text-sm shadow-lg hover:shadow-blue-500/30 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="check" class="w-4 h-4"></i> Apply Crop
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invisible Canvas Engine -->
+    <canvas id="genCanvas" class="hidden"></canvas>
+
+    <script>
+        // --- THEME INIT ---
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            if(html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.theme = 'light';
+            } else {
+                html.classList.add('dark');
+                localStorage.theme = 'dark';
+            }
+        }
+
+        lucide.createIcons();
+
+        // --- CONFIG ---
+        const PAPERS = {
+            'a4': { w: 210, h: 297 },
+            '4r': { w: 101.6, h: 152.4 } // 4x6 inches
+        };
+
+        // --- STATE ---
+        let people = [];
+        let cropper = null;
+        let editIndex = -1;
+        let flipX = 1, flipY = 1;
+        let baseW = 35;
+        let baseH = 45;
+        let isFullPreview = false; // New State for Preview Mode
+
+        const els = {
+            list: document.getElementById('peopleList'),
+            empty: document.getElementById('emptyState'),
+            preview: document.getElementById('sheetPreview'),
+            previewBox: document.getElementById('previewContainer'),
+            previewWrapper: document.querySelector('.preview-wrapper'),
+            previewBtn: document.getElementById('previewBtn'),
+            canvas: document.getElementById('genCanvas'),
+            modal: document.getElementById('cropModal'),
+            cropperImg: document.getElementById('cropperImg'),
+            rotateVal: document.getElementById('rotateVal'),
+            rotateSlider: document.getElementById('rotateSlider'),
+            inputs: {
+                w: document.getElementById('globalW'),
+                h: document.getElementById('globalH'),
+                scale: document.getElementById('globalScale'),
+                scaleLabel: document.getElementById('globalScaleVal'),
+                paper: document.getElementById('paperSelect'),
+                orient: document.getElementById('orientationSelect'),
+                dpi: document.getElementById('cfgDpi'),
+                margin: document.getElementById('cfgMargin'),
+                gap: document.getElementById('cfgGap'),
+                stroke: document.getElementById('cfgStroke'),
+                strokeColor: document.getElementById('cfgStrokeColor')
+            },
+            capacity: document.getElementById('capacityText')
+        };
+
+        // Force slider sync on load
+        window.onload = function() {
+            els.inputs.scale.value = 100;
+            els.inputs.scaleLabel.textContent = "100%";
+            updateBaseDimensions();
+        }
+
+        function updateBaseDimensions() {
+            baseW = parseFloat(els.inputs.w.value);
+            baseH = parseFloat(els.inputs.h.value);
+            // Reset scale to 100% when user manually types a size
+            els.inputs.scale.value = 100;
+            els.inputs.scaleLabel.textContent = "100%";
+            renderSheet();
+        }
+
+        function applyGlobalScale(percent) {
+            els.inputs.scaleLabel.textContent = `${percent}%`;
+            const factor = percent / 100;
+            els.inputs.w.value = (baseW * factor).toFixed(1);
+            els.inputs.h.value = (baseH * factor).toFixed(1);
+            renderSheet();
+        }
+
+        // --- NEW FUNCTION: TOGGLE 100% PREVIEW ---
+        function toggleFullPreview() {
+            isFullPreview = !isFullPreview;
+            
+            // Calculate CSS width for 100% physical size (1mm approx 3.78px)
+            const paperKey = els.inputs.paper.value;
+            const orient = els.inputs.orient.value;
+            let pW = PAPERS[paperKey].w;
+            let pH = PAPERS[paperKey].h;
+            
+            if (orient === 'l') { [pW, pH] = [Math.max(pW, pH), Math.min(pW, pH)]; }
+            else { [pW, pH] = [Math.min(pW, pH), Math.max(pW, pH)]; }
+            
+            const cssWidth = pW * 3.7795; // mm to px conversion
+
+            if (isFullPreview) {
+                // Enable scroll mode
+                els.previewWrapper.classList.remove('items-center', 'justify-center', 'overflow-hidden');
+                els.previewWrapper.classList.add('overflow-auto', 'block');
+                
+                // Fix image size
+                els.previewBox.style.maxWidth = 'none';
+                els.previewBox.style.maxHeight = 'none';
+                els.previewBox.style.width = `${cssWidth}px`;
+                els.previewBox.style.margin = '0 auto'; // Center horizontally
+                els.previewBox.style.boxShadow = '0 0 40px rgba(0,0,0,0.1)';
+                
+                // UPDATED: Change icon AND text to "Fit"
+                els.previewBtn.innerHTML = '<i data-lucide="zoom-out" class="w-4 h-4"></i><span class="text-xs font-bold">Fit</span>';
+            } else {
+                // Reset to fit mode
+                els.previewWrapper.classList.add('items-center', 'justify-center', 'overflow-hidden');
+                els.previewWrapper.classList.remove('overflow-auto', 'block');
+                
+                els.previewBox.style.maxWidth = '90%';
+                els.previewBox.style.maxHeight = '90%';
+                els.previewBox.style.width = '';
+                els.previewBox.style.margin = '';
+                els.previewBox.style.boxShadow = '';
+
+                // UPDATED: Change icon AND text to "100%"
+                els.previewBtn.innerHTML = '<i data-lucide="zoom-in" class="w-4 h-4"></i><span class="text-xs font-bold">100%</span>';
+            }
+            lucide.createIcons();
+        }
+
+        function handleUpload(e) {
+            const file = e.target.files[0];
+            if(file) {
+                const reader = new FileReader();
+                reader.onload = (ev) => openCropper(ev.target.result, -1);
+                reader.readAsDataURL(file);
+            }
+            e.target.value = '';
+        }
+
+        function openCropper(src, idx) {
+            editIndex = idx;
+            els.cropperImg.src = src;
+            els.modal.classList.remove('hidden');
+            
+            if(cropper) cropper.destroy();
+            
+            flipX = 1; flipY = 1;
+            els.rotateVal.textContent = "0°";
+            els.rotateSlider.value = 0;
+
+            const aspect = parseFloat(els.inputs.w.value) / parseFloat(els.inputs.h.value);
+            cropper = new Cropper(els.cropperImg, {
+                aspectRatio: aspect,
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 0.9,
+                responsive: true,
+                background: false,
+                modal: true,
+                guides: true,
+                highlight: false,
+                center: true
+            });
+        }
+
+        function closeModal() {
+            els.modal.classList.add('hidden');
+            if(cropper) cropper.destroy();
+        }
+
+        function flip(dir) {
+            if(!cropper) return;
+            if(dir === 'h') { flipX = -flipX; cropper.scaleX(flipX); }
+            else { flipY = -flipY; cropper.scaleY(flipY); }
+        }
+        
+        function rotate(deg) {
+            if(!cropper) return;
+            cropper.rotate(deg);
+        }
+
+        function updateRotate(val) {
+            if(!cropper) return;
+            cropper.rotateTo(parseFloat(val));
+            els.rotateVal.textContent = `${val}°`;
+        }
+
+        function saveCrop() {
+            if(!cropper) return;
+            const highResCanvas = cropper.getCroppedCanvas({ height: 800, imageSmoothingQuality: 'high' });
+            const highResData = highResCanvas.toDataURL('image/jpeg', 0.95);
+
+            if(editIndex === -1) {
+                people.push({
+                    id: Date.now(),
+                    img: highResData,
+                    copies: 8,
+                    newLine: true,
+                    name: '',
+                    date: '',
+                    showText: false
+                });
+            } else {
+                people[editIndex].img = highResData;
+            }
+            closeModal();
+            renderList();
+            renderSheet();
+        }
+
+        function activateEcoMode() {
+            people.forEach(p => p.newLine = false);
+            renderList();
+            renderSheet();
+        }
+
+        function downloadRawCrop(i) {
+            const link = document.createElement('a');
+            link.download = `crop-${i+1}-${Date.now()}.jpg`;
+            link.href = people[i].img;
+            link.click();
+        }
+
+        function drawPhotoOnCanvas(ctx, img, x, y, w, h, p, lineWidthScale) {
+            ctx.drawImage(img, x, y, w, h);
+            
+            if(p.showText && (p.name || p.date)) {
+                const textAreaH = h * 0.22; 
+                ctx.fillStyle = 'white';
+                ctx.fillRect(x, y + h - textAreaH, w, textAreaH);
+                
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                let fontSize = textAreaH * 0.35;
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                
+                const centerX = x + (w / 2);
+                const nameY = (y + h) - (textAreaH * 0.65);
+                const dateY = (y + h) - (textAreaH * 0.25);
+                
+                if(p.name) {
+                    const nameStr = p.name.toUpperCase();
+                    let nameWidth = ctx.measureText(nameStr).width;
+                    const maxWidth = w * 0.9; 
+                    
+                    if(nameWidth > maxWidth) {
+                        const scaleFactor = maxWidth / nameWidth;
+                        ctx.font = `bold ${fontSize * scaleFactor}px sans-serif`;
+                    }
+                    
+                    ctx.fillText(nameStr, centerX, p.date ? nameY : (y + h) - (textAreaH/2));
+                    ctx.font = `bold ${fontSize}px sans-serif`;
+                }
+
+                if(p.date) {
+                     const [y_d, m_d, d_d] = p.date.split('-');
+                     const indianDate = `${d_d}-${m_d}-${y_d}`;
+                     ctx.fillText(indianDate, centerX, p.name ? dateY : (y + h) - (textAreaH/2));
+                }
+            }
+
+            const strokeW = parseFloat(els.inputs.stroke.value);
+            if(strokeW > 0.01) {
+                ctx.strokeStyle = els.inputs.strokeColor.value;
+                ctx.lineWidth = strokeW * (lineWidthScale * (72/150)); 
+                ctx.strokeRect(x, y, w, h);
+            }
+        }
+
+        function downloadFormatted(i) {
+            const p = people[i];
+            const dpi = 300;
+            const MM_TO_PX = dpi / 25.4;
+            const lineWidthScale = dpi / 72; 
+            
+            const itemW = parseFloat(els.inputs.w.value) * MM_TO_PX;
+            const itemH = parseFloat(els.inputs.h.value) * MM_TO_PX;
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = itemW;
+            canvas.height = itemH;
+            const ctx = canvas.getContext('2d');
+            
+            const img = new Image();
+            img.onload = () => {
+                drawPhotoOnCanvas(ctx, img, 0, 0, itemW, itemH, p, lineWidthScale);
+                const link = document.createElement('a');
+                link.download = `passport-final-${i+1}.jpg`;
+                link.href = canvas.toDataURL('image/jpeg', 1.0);
+                link.click();
+            };
+            img.src = p.img;
+        }
+
+        function toggleTextOptions(i) {
+            const el = document.getElementById(`text-opts-${i}`);
+            el.classList.toggle('hidden');
+        }
+
+        function renderList() {
+            els.list.innerHTML = '';
+            if(people.length === 0) {
+                els.empty.classList.remove('hidden');
+                return;
+            }
+            els.empty.classList.add('hidden');
+
+            people.forEach((p, i) => {
+                const div = document.createElement('div');
+                div.className = "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm animate-in fade-in slide-in-from-left-4 duration-300";
+                
+                div.innerHTML = `
+                    <div class="flex gap-3 items-start">
+                        <div class="relative group shrink-0">
+                            <img src="${p.img}" class="w-14 h-20 object-cover rounded-md border border-slate-100 dark:border-slate-600">
+                            <div class="absolute -top-2 -left-2 bg-slate-900 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">${i+1}</div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">Photo ${i+1}</span>
+                                <div class="flex flex-col items-end gap-1">
+                                    <div class="flex items-center gap-1">
+                                        <span class="text-[10px] text-slate-400">Qty</span>
+                                        <input type="number" value="${p.copies}" min="1" class="w-10 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded px-1 py-0.5 text-center outline-none focus:border-blue-500" onchange="people[${i}].copies=parseInt(this.value);renderSheet()">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center gap-2 mb-2">
+                                <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                                    <input type="checkbox" class="w-3.5 h-3.5 accent-blue-600 rounded border-slate-300" ${p.newLine ? 'checked' : ''} onchange="people[${i}].newLine=this.checked;renderSheet()">
+                                    <span class="text-[10px] font-medium text-slate-500 dark:text-slate-400">New Line</span>
+                                </label>
+                            </div>
+
+                            <div class="flex flex-wrap gap-2 border-t border-slate-100 dark:border-slate-700 pt-2">
+                                <button onclick="openCropper('${p.img}', ${i})" class="flex-1 px-3 py-1.5 text-xs font-medium bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-sm" title="Edit Crop">Edit</button>
+                                
+                                <div class="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                                
+                                <button onclick="downloadRawCrop(${i})" class="p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" title="Download Raw Crop">
+                                    <i data-lucide="image" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="downloadFormatted(${i})" class="p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" title="Download with Border & Text">
+                                    <i data-lucide="award" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="toggleTextOptions(${i})" class="p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" title="Enable Name/Date">
+                                    <i data-lucide="type" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="people.splice(${i},1);renderList();renderSheet()" class="p-2 rounded-md border border-red-100 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 dark:text-red-400 ml-auto" title="Remove">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+
+                            <!-- Text Options Panel -->
+                            <div id="text-opts-${i}" class="${p.showText ? '' : 'hidden'} mt-3 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 animate-in fade-in slide-in-from-top-2">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <input type="checkbox" class="w-3.5 h-3.5 accent-blue-600 rounded" ${p.showText ? 'checked' : ''} onchange="people[${i}].showText=this.checked;renderList();renderSheet()">
+                                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Enable Name/Date</span>
+                                </div>
+                                <div class="space-y-2">
+                                    <input type="text" placeholder="Name (e.g. JOHN DOE)" value="${p.name || ''}" class="w-full text-xs p-2 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" oninput="people[${i}].name=this.value;renderSheet()">
+                                    <input type="date" value="${p.date || ''}" class="w-full text-xs p-2 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" oninput="people[${i}].date=this.value;renderSheet()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                els.list.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+
+        async function renderSheet() {
+            // RESET PREVIEW MODE ON CHANGE
+            if (isFullPreview) {
+                toggleFullPreview(); // Toggles back to false (Fit to Screen)
+            }
+
+            const paperKey = els.inputs.paper.value;
+            const orient = els.inputs.orient.value;
+            const dpi = parseInt(els.inputs.dpi.value);
+            
+            let pW = PAPERS[paperKey].w;
+            let pH = PAPERS[paperKey].h;
+
+            if(orient === 'l') {
+                [pW, pH] = [Math.max(pW, pH), Math.min(pW, pH)];
+            } else {
+                [pW, pH] = [Math.min(pW, pH), Math.max(pW, pH)];
+            }
+            
+            els.previewBox.style.aspectRatio = `${pW} / ${pH}`;
+            els.previewBox.style.width = '';
+            els.previewBox.style.height = '';
+
+
+            const MM_TO_PX = dpi / 25.4;
+            const W_PX = pW * MM_TO_PX;
+            const H_PX = pH * MM_TO_PX;
+            els.canvas.width = W_PX;
+            els.canvas.height = H_PX;
+            const ctx = els.canvas.getContext('2d');
+
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, W_PX, H_PX);
+
+            const margin = parseFloat(els.inputs.margin.value) * MM_TO_PX;
+            const gap = parseFloat(els.inputs.gap.value) * MM_TO_PX;
+            
+            // Global size driven by the header inputs (which are pre-scaled by slider)
+            const itemW = parseFloat(els.inputs.w.value) * MM_TO_PX;
+            const itemH = parseFloat(els.inputs.h.value) * MM_TO_PX;
+
+            // Calculate scale factor for 1pt at current DPI
+            // Modified to use 150 as the divisor for consistency with pps7.html preference
+            const lineWidthScale = dpi / 150;
+
+            // Centering Calculation
+            const availableWidth = W_PX - (2 * margin);
+            const fullItemWidth = itemW + gap;
+            const maxCols = Math.floor((availableWidth + gap) / fullItemWidth);
+            const contentWidth = (maxCols * itemW) + ((maxCols - 1) * gap);
+            const centeredMargin = Math.max(margin, (W_PX - contentWidth) / 2);
+
+            let x = centeredMargin;
+            let y = margin;
+            let total = 0;
+
+            const imageAssets = await Promise.all(people.map(p => new Promise(resolve => {
+                const i = new Image();
+                i.onload = () => resolve({ ...p, el: i });
+                i.src = p.img;
+            })));
+
+            imageAssets.forEach(p => {
+                if(p.newLine && x > centeredMargin) { 
+                    x = centeredMargin; 
+                    y += itemH + gap; 
+                }
+                
+                for(let k=0; k < p.copies; k++) {
+                    if(y + itemH > H_PX - margin) break;
+                    
+                    // Pass the calculated DPI scale factor to the drawing function
+                    drawPhotoOnCanvas(ctx, p.el, x, y, itemW, itemH, p, lineWidthScale);
+                    
+                    total++;
+                    x += itemW + gap;
+                    
+                    if(x + itemW > W_PX - margin) {
+                        x = centeredMargin; 
+                        y += itemH + gap;
+                    }
+                }
+            });
+
+            els.preview.src = els.canvas.toDataURL('image/jpeg', 0.7);
+            els.capacity.innerText = `${total} Photos Fit`;
+        }
+
+        function downloadSheet(format) {
+            if(people.length === 0) return alert('Add a photo first');
+            const orient = els.inputs.orient.value;
+            const size = els.inputs.paper.value;
+            const filename = `passport-sheet-${size}-${orient}-${Date.now()}`;
+
+            if (format === 'pdf') {
+                const { jsPDF } = window.jspdf;
+                let pW = PAPERS[size].w;
+                let pH = PAPERS[size].h;
+                const isLandscape = orient === 'l';
+                
+                const pdf = new jsPDF({
+                    orientation: isLandscape ? 'landscape' : 'portrait',
+                    unit: 'mm',
+                    format: size === '4r' ? [101.6, 152.4] : 'a4'
+                });
+
+                const pdfW = isLandscape ? Math.max(pW, pH) : Math.min(pW, pH);
+                const pdfH = isLandscape ? Math.min(pW, pH) : Math.max(pW, pH);
+
+                pdf.addImage(els.canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, pdfW, pdfH);
+                pdf.save(filename + '.pdf');
+            } else {
+                const link = document.createElement('a');
+                link.download = filename + '.jpg';
+                link.href = els.canvas.toDataURL('image/jpeg', 1.0);
+                link.click();
+            }
+        }
+
+        function printSheet() {
+            if(people.length === 0) return alert('Add a photo first');
+            const orient = els.inputs.orient.value === 'l' ? 'landscape' : 'portrait';
+            const win = window.open('');
+            win.document.write(`<html><head><style>@page { size: ${orient}; margin: 0; } body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; } img { max-width: 100%; max-height: 100%; object-fit: contain; }</style></head><body><img src="${els.canvas.toDataURL('image/jpeg', 1.0)}"><script>setTimeout(() => { window.print(); window.close(); }, 500);<\/script></body></html>`);
+        }
+
+        // --- NEW: MOUSE WHEEL CONTROL ---
+        function setupWheelSupport() {
+            // Helper to attach wheel logic to an element
+            const attachWheel = (id, step = 1) => {
+                const el = document.getElementById(id);
+                if(!el) return;
+                
+                el.addEventListener('wheel', (e) => {
+                    // Only act if hovering/active, standard logic applies
+                    e.preventDefault(); // Stop page scroll
+
+                    let current = parseFloat(el.value) || 0;
+                    const direction = e.deltaY < 0 ? 1 : -1;
+                    let newValue = current + (direction * step);
+
+                    // Constraints
+                    const min = el.getAttribute('min') ? parseFloat(el.getAttribute('min')) : 0;
+                    const max = el.getAttribute('max') ? parseFloat(el.getAttribute('max')) : 999;
+                    
+                    if (newValue < min) newValue = min;
+                    if (newValue > max) newValue = max;
+
+                    // Update and Trigger
+                    el.value = Number.isInteger(step) ? Math.round(newValue) : parseFloat(newValue.toFixed(1));
+                    el.dispatchEvent(new Event('change'));
+                }, { passive: false });
+            };
+
+            // 1. Attach to Static Inputs
+            attachWheel('cfgMargin', 1); // Margin
+            attachWheel('cfgGap', 1);    // Gap
+            attachWheel('cfgStroke', 1); // Stroke
+
+            // 2. Attach to Dynamic Photo Quantity (Event Delegation)
+            // We attach one listener to the container (#peopleList)
+            const listContainer = document.getElementById('peopleList');
+            listContainer.addEventListener('wheel', (e) => {
+                // Check if the target is a number input (Quantity inputs)
+                if (e.target.tagName === 'INPUT' && e.target.type === 'number') {
+                    e.preventDefault();
+                    
+                    let current = parseInt(e.target.value) || 0;
+                    const direction = e.deltaY < 0 ? 1 : -1;
+                    let newValue = current + direction;
+
+                    if (newValue < 1) newValue = 1; // Min 1 copy
+
+                    e.target.value = newValue;
+                    e.target.dispatchEvent(new Event('change')); // Trigger the inline onchange
+                }
+            }, { passive: false });
+        }
+
+        // Initialize Wheel Support immediately
+        setupWheelSupport();
+    </script>
+</body>
+</html>
